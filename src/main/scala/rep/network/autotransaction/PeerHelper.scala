@@ -238,7 +238,7 @@ class PeerHelper(name: String) extends ModuleBase(name) {
 //      val cip = new ChaincodeInput("transfer", Seq(li))
 //      ti.t.withIpt(cip)
       try {
-        println("Test Invoke 2 Transaction Information: " + ti.t)
+//        println("Test Invoke 2 Transaction Information: " + ti.t)
 //        val si = scala.io.Source.fromFile("api_req/json/transfer_" + "invoke" + ".json", "UTF-8")
 //        val li = try si.mkString finally si.close()
 //        val t: Transaction = createTransactionByInput(pe.getSysTag, chaincode, "transfer", Seq(li))

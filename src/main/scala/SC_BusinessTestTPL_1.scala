@@ -25,15 +25,13 @@ import scala.collection.mutable.Seq
  * 业务合约
  */
 
-final case class SC_BusinessTestTPL_1SC_ContractPointsTPL_1TransferForLegal2(from:String, to:String, amount:Int, remind:String)
-final case class SC_BusinessTestTPL_1SC_ContractPointsTPL_1TopUpForLegal2(from:String, to:String, amount:Int)
+final case class SC_BusinessTestTPL_1TransferForLegal(from:String, to:String, amount:Int, remind:String)
+final case class SC_BusinessTestTPL_1TopUpForLegal(from:String, to:String, amount:Int)
 class SC_BusinessTestTPL_1 extends IContract{
 
-  var actorSys = GlobalUtils.systems(0)
-  val td = actorSys.actorOf(TransactionDispatcher.props("td2"),  "td2")
-  val ph = actorSys.actorOf(PeerHelper.props("ph2"), "ph2")
-  val cid1 = ChaincodeId("ContractPointsTPL", 1)
-  var calledCount: Int = 0
+  val cid = ChaincodeId("BusinessTestTPL", 1)
+  val chaincodeName = cid.chaincodeName
+  val chaincodeVersion = cid.version
 
   implicit val formats = DefaultFormats
 
@@ -41,42 +39,37 @@ class SC_BusinessTestTPL_1 extends IContract{
     println(s"tid: $ctx.t.id")
   }
 
-  def printing(ctx: ContractContext, data:SC_BusinessTestTPL_1SC_ContractPointsTPL_1TopUpForLegal2) : ActionResult={
-    calledCount = (ctx.api.getCounts(data.from)).asInstanceOf[Int]
-    calledCount += 1
-    ctx.api.setCounts(data.from, calledCount)
+  def printing(ctx: ContractContext, data:SC_BusinessTestTPL_1TopUpForLegal) : ActionResult={
+    // 判断积分余额，假设调用该合约需要cost=2
+    val cost = 2
+    if (!ctx.api.checkPoints(data.from, chaincodeName, cost)) {
+      println("#### 合约调用失败，积分余额不足 ####")
+      return new ActionResult(-4, "当前积分不足")
+    }
 
-//    val t = PeerHelper.createTransaction4Invoke(sysName, cid1, ACTION.get, Seq(toJson("121000005l35120456")))
-//    val msg_send = DoTransaction(t, "dbnumber", TypeOfSender.FromAPI)
-//    td ! msg_send
-//    val tt = TestInvoke2(t)
-//    ph ! tt
-//
-//    var top2 = TopUp("12110107bi45jh675g", "12110107bi45jh675g", 1000)
-//    val t6 = PeerHelper.createTransaction4Invoke(sysName, cid1, ACTION.set, Seq(toJson(top2)))
-//    val msg_send6 = DoTransaction(t6, "dbnumber", TypeOfSender.FromAPI)
-//    td ! msg_send6
-//    //    tp ! test_top
-//    val tt6 = TestInvoke2(t6)
-//    ph ! tt6
+    println("Business Contract Test, function printing called successfully")
+    return new ActionResult(1)
+  }
 
-    val cost_detail = count_test(data.from, calledCount)
-    val cost = PeerHelper.createTransaction4Invoke(sysName, cid1, ACTION.CostAndSet2, Seq(toJson(cost_detail)))
-    val cost_msg = DoTransaction(cost, "dbnumber", TypeOfSender.FromAPI)
-    td ! cost_msg
-    val cost_t = TestInvoke2(cost)
-    ph ! cost
+  def buy(ctx: ContractContext, data:SC_BusinessTestTPL_1TopUpForLegal) : ActionResult={
+    // 判断积分余额，假设调用该合约需要cost=5
+    val cost = 5
+    if (!ctx.api.checkPoints(data.from, chaincodeName, cost)) {
+      println("#### 合约调用失败，积分余额不足 ####")
+      return new ActionResult(-4, "当前积分不足")
+    }
 
-    println("Business Contract Test, function printing called")
-    new ActionResult(1)
+    println("Business Contract Test, function buy called successfully")
+    return new ActionResult(1)
   }
 
   def onAction(ctx: ContractContext,action:String, sdata:String ):ActionResult={
     val json = parse(sdata)
     action match {
       case "printing" =>
-        printing(ctx, json.extract[SC_BusinessTestTPL_1SC_ContractPointsTPL_1TopUpForLegal2])
+        printing(ctx, json.extract[SC_BusinessTestTPL_1TopUpForLegal])
+      case "buy" =>
+        buy(ctx, json.extract[SC_BusinessTestTPL_1TopUpForLegal])
     }
   }
-
 }

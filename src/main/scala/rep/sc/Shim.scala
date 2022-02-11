@@ -19,21 +19,22 @@ package rep.sc
 import com.fasterxml.jackson.core.Base64Variants
 import akka.actor.ActorSystem
 import rep.network.tools.PeerExtension
-import rep.protos.peer.{OperLog, Transaction}
+import rep.protos.peer.{ChaincodeId, OperLog, Transaction}
 import rep.storage.{ImpDataAccess, ImpDataPreload, TransactionOfDataPreload}
 import rep.utils.SerializeUtils
 import rep.utils.SerializeUtils.deserialise
 import rep.utils.SerializeUtils.serialise
+
 import java.security.cert.CertificateFactory
 import java.io.FileInputStream
 import java.io.ByteArrayInputStream
 import java.io.StringReader
 import java.security.cert.X509Certificate
-
 import rep.crypto.cert.SignTool
 import _root_.com.google.protobuf.ByteString
 import rep.log.RepLogger
 import org.slf4j.Logger;
+import java.util.concurrent.ConcurrentHashMap
 
 /** Shim伴生对象
  *  @author c4w
@@ -67,7 +68,11 @@ class Shim(system: ActorSystem, cName: String) {
   //本chaincode的 key前缀
   val pre_key = WorldStateKeyPreFix + cName + PRE_SPLIT
   // new
-  val test_pre_key = "points_" + cName + "_"
+  val point_pre_key = "points_"
+  val record_pre_key = "record_"
+  var index = 1
+  private var record_list = new ConcurrentHashMap[String, ConcurrentHashMap[String,Array[Byte]]]
+
   //存储模块提供的system单例
   val pe = PeerExtension(system)
   //从交易传入, 内存中的worldState快照
@@ -77,28 +82,75 @@ class Shim(system: ActorSystem, cName: String) {
   //记录状态修改日志
   var ol = scala.collection.mutable.ListBuffer.empty[OperLog]
 
-  // new
-  def setPoints(key: Key, points: Any): Unit = {
-    val pkey = test_pre_key + key
-    val oldPoints = get(pkey)
-    val spoints = serialise(points)
-    this.srOfTransaction.Put(pkey, spoints)
-    val ov = if(oldPoints == null) ByteString.EMPTY else ByteString.copyFrom(oldPoints)
-    val nv = if(spoints == null) ByteString.EMPTY else ByteString.copyFrom(spoints)
-    ol += new OperLog(key,ov, nv)
-    println("Key: " + key + " New points: " + getPoints(key))
+  // 积分充值
+  def addPoints(key: Key, points: Int): Unit = {
+    val pkey = point_pre_key + key
+    // 获取当前积分余额
+    val currentPoints = deserialise(get(point_pre_key + key)).asInstanceOf[Int]
+    println("#### 当前账户： " + pkey + " ####")
+    println("#### 当前积分余额为： " + currentPoints + " ####")
+
+    // 更新积分
+    val spoints = currentPoints + points
+    this.srOfTransaction.Put(pkey, serialise(spoints))
+    println("#### 充值后积分余额： " + deserialise(get(point_pre_key + key)).asInstanceOf[Int] + " ####")
   }
-  // new
-  def getPoints(key: Key): Any = {
-    deserialise(get(test_pre_key + key))
+
+  // 判断积分是否足够调用，若积分足够，则根据所需cost进行扣费，并记录本次消费
+  def checkPoints(key: Key, cname: String, cost: Int): Boolean = {
+    val pkey = point_pre_key + key
+    // 获取当前积分余额
+    var currentPoints = deserialise(get(pkey)).asInstanceOf[Int]
+    println("#### 当前账户： " + pkey + " ####")
+    println("#### 当前积分余额为： " + currentPoints + " ####")
+    // 余额不足 返回false
+    if(currentPoints < cost) {
+      println("#### 积分余额不足，checkPoints返回false ####")
+      false
+    }
+    else {  // 余额充足，进行扣费与积分的更新，并返回true
+      currentPoints -= cost
+      this.srOfTransaction.Put(pkey, serialise(currentPoints))
+      println("#### 积分余额足够 ####")
+      println("#### 进行扣费，扣费后积分余额为： " + deserialise(get(point_pre_key + key)).asInstanceOf[Int] + " ####")
+
+      // 对本次消费进行记录
+      // Key: record_121000005l35120456_BusinessTestTPL   Value: 50
+      var records = new ConcurrentHashMap[String, Array[Byte]]
+      val rkey = record_pre_key + index + "_" + key + "_" + cname
+      index += 1
+      val spoints = serialise(currentPoints)
+      if (!record_list.containsKey(key)) {
+        records.put(rkey, spoints)
+        record_list.put(key, records)
+      } else if (record_list.containsKey(key) && record_list.get(key)!=null) {
+        records = record_list.get(key)
+        records.put(rkey, spoints)
+      }
+      // println("#### 本次消费记录： ####")
+      // println("#### Key: " + rkey + "  Value: " + deserialise(record_list.get(key).get(rkey)) + " ####")
+      // getRecord(key)
+      true
+    }
+  }
+
+  // 查询用户调用合约的所有记录
+  def getRecord(key: Key): Unit = {
+    val r = record_list.get(key)
+    println("#### 查询所有消费记录： ####")
+    for(k <- r.keySet().toArray()) {
+      println("#### Key: " + k + "  Value: " + deserialise(r.get(k)) + " ####")
+    }
   }
   def setVal(key: Key, value: Any):Unit ={
     setState(key, serialise(value))
   }
-   def getVal(key: Key):Any ={
+  def getVal(key: Key):Any ={
     deserialise(getState(key))
   }
- 
+  def getTag = {
+    println("【 System Tag 】: 【 " + pe.getSysTag + " 】")
+  }
   def setState(key: Key, value: Array[Byte]): Unit = {
     val pkey = pre_key + key
     val oldValue = get(pkey)
